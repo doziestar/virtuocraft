@@ -1,17 +1,39 @@
-use pyo3::prelude::*;
-use pyo3::types::IntoPyDict;
+use std::{iter::once, sync::Arc};
 
-fn main() -> PyResult<()> {
-    Python::with_gil(|py| {
-        let sys = py.import("sys")?;
-        let version: String = sys.getattr("version")?.extract()?;
+use axum::Router;
+use http::header::{HeaderName, AUTHORIZATION, CONTENT_TYPE};
+use tower::ServiceBuilder;
+use tower_http::{
+    add_extension::AddExtensionLayer, propagate_header::PropagateHeaderLayer,
+    sensitive_headers::SetSensitiveRequestHeadersLayer, set_header::SetResponseHeaderLayer,
+    trace::TraceLayer, validate_request::ValidateRequestHeaderLayer,
+};
 
-        let locals = [("os", py.import("os")?)].into_py_dict(py);
-        let code = "os.getenv('USER') or os.getenv('USERNAME') or 'Unknown'";
-        let user: String = py.eval(code, None, Some(&locals))?.extract()?;
+mod handlers;
+mod routes;
+mod services;
 
-        println!("Hello {}, I'm Python {}", user, version);
-        // println!("Hello, I'm Python {}", version);
-        Ok(())
-    })
+struct State {}
+
+#[tokio::main]
+async fn main() {
+    let state = State {};
+
+    let service = ServiceBuilder::new()
+        .layer(SetSensitiveRequestHeadersLayer::new(once(AUTHORIZATION)))
+        .layer(TraceLayer::new_for_http())
+        .layer(AddExtensionLayer::new(Arc::new(state)))
+        .layer(PropagateHeaderLayer::new(HeaderName::from_static(
+            "x-request-id",
+        )))
+        .layer(ValidateRequestHeaderLayer::accept("application/json"));
+
+    let app = Router::new()
+        .merge(routes::health_check_routes())
+        .merge(routes::media_routes())
+        .layer(service);
+
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:3030").await.unwrap();
+    println!("Listening on {}", listener.local_addr().unwrap());
+    axum::serve(listener, app).await.unwrap();
 }
