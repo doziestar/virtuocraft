@@ -1,13 +1,13 @@
-use std::{iter::once, sync::Arc};
-
 use axum::Router;
-use http::header::{HeaderName, AUTHORIZATION, CONTENT_TYPE};
+use http::header::{HeaderName, AUTHORIZATION};
+use std::{iter::once, sync::Arc};
 use tower::ServiceBuilder;
 use tower_http::{
     add_extension::AddExtensionLayer, propagate_header::PropagateHeaderLayer,
-    sensitive_headers::SetSensitiveRequestHeadersLayer, set_header::SetResponseHeaderLayer,
-    trace::TraceLayer, validate_request::ValidateRequestHeaderLayer,
+    sensitive_headers::SetSensitiveRequestHeadersLayer, trace::TraceLayer,
+    validate_request::ValidateRequestHeaderLayer,
 };
+use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
 mod handlers;
 mod routes;
@@ -18,6 +18,8 @@ struct State {}
 #[tokio::main]
 async fn main() {
     let state = State {};
+
+    tracing_subscriber::registry().with(fmt::layer()).init();
 
     let service = ServiceBuilder::new()
         .layer(SetSensitiveRequestHeadersLayer::new(once(AUTHORIZATION)))
